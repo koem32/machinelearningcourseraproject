@@ -1,0 +1,94 @@
+---
+title: "Machine learning project"
+author: "koem32"
+date: "September 12, 2014"
+output: html_document
+---
+#Abstract
+
+This research project aims to predict the type of activity performed by 6 subjects using data measurements from accelerometers on  the belt, forearm, arm, and dumbell. We used a training and testing set to perform this prediction and applied a random forest model to generate a predictor with an estimated out of sample error rate of less than 0.5%. As a result we believe this to be a very accurate predictor. Applying this predictor to our testing set resulted in 100% accuracy
+
+The data set is available from the website here: http://groupware.les.inf.puc-rio.br/har. 
+
+#Data Preprocessing
+
+Create a file in the working directory called "machineLearningProjectKoem32" if it does not already exist and download the files into it. 
+```{r}
+if (!file.exists("machineLearningProjectKoem32")) {dir.create("machineLearningProjectKoem32")}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl, destfile = "./machineLearningProjectKoem32/pml-training.csv", method = "curl")
+fileUrl2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl2, destfile = "./machineLearningProjectKoem32/pml-testing.csv", method = "curl")
+
+training<-read.csv(file="machineLearningProjectKoem32/pml-training.csv",head=TRUE,sep=",")
+testing<-read.csv(file="machineLearningProjectKoem32/pml-testing.csv",head=TRUE,sep=",")
+```
+The first step is to remove those variables in the training set which have almost 0 variance as these variables will be very weak predictors.Apply the same to the testing set
+
+```{r, echo=FALSE}
+library(caret)
+nsv<-nearZeroVar(training, saveMetrics=TRUE)
+omit<-which(nsv$nzv==TRUE)
+training2<-training[,-omit]
+testing2<-testing[,-omit]
+```
+Next we get rid of all column which are full of NAs in the training set and similarly remove these same columns from testing set. 
+We also remove the first 6 columns (x column is just a counter and the other time variables are uniterpretable)
+
+```{r}
+training3<-training2[,apply(training2,2,function(xx) !any(is.na(xx)))] 
+testing3<-testing2[,apply(training2,2,function(xx) !any(is.na(xx)))]
+training4<-training3[,-(1:6)]
+testing4<-testing3[,-(1:6)]
+```
+Next we check there are no NAs or blank fields in the training set
+```{r}
+sum(training4=="")
+sum(is.na(training4))
+```
+Looks ok so we are good to go.
+
+#Applying a prediction model
+
+In order to estimate the out of sample error rate we create a new training and cross validation set from the training set
+```{r}
+set.seed(234)
+inTrain <- createDataPartition(y=training4$classe, p=0.75, list=FALSE)
+newTraining<-training4[inTrain,]
+newTesting<-training4[-inTrain,]
+```
+
+Since we are trying to find a classification prediction, we are going to try applying random forests 
+We apply the random forest algorithm to new training set and predict on the cross validation set to get an estimate of out of sample error
+```{r}
+library(randomForest)
+set.seed(354)
+modFit<-randomForest(newTraining$classe~.,data=newTraining,ntree=300,keep.forest=TRUE)
+pred<-predict(modFit, newTesting)
+confusionMatrix(pred,newTesting$classe)
+```
+Hence the estimated out of sample error rate is estimated at 1-0.9951=0.5%
+
+When I plot the MSE of each classe I note how I could have gotten a pretty good predictor with just 50 or 60 trees as the MSE drops quickly after the first 50 trees.
+```{r}
+plot(modFit,type="l")
+legend("topright", legend=unique(newTraining$classe) )
+```
+Now let's apply this model to the original testing set
+```{r}
+answers<-predict(modFit, testing4[,-53])
+answers
+```
+Finally I can download the answers into txt files in a folder names machineLearningAnswers into the working directory so as to submit them for this project
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+if (!file.exists("machineLearningAnswers")) {dir.create("machineLearningAnswers")}
+setwd("./machineLearningAnswers")
+pml_write_files(answers)
+```
